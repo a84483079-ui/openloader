@@ -17,6 +17,10 @@ pub trait Driver {
     unsafe fn init(&self);
 }
 
+pub trait DriverMut {
+    unsafe fn init(&mut self);
+}
+
 pub(super) unsafe fn readl_raw<T>(reg: *const T) -> T {
     unsafe { reg.read_volatile() }
 }
