@@ -1,4 +1,4 @@
-use crate::drivers::{Driver, bit, dram::DramSize, readl, writel};
+use crate::drivers::{StatelessDriver, bit, dram::DramSize, readl, writel};
 
 const EFUSE_BASE: usize = 0x121b000;
 const EFUSE_CONTROL: usize = EFUSE_BASE + 0x4;
@@ -10,14 +10,36 @@ const FLAG_SETUP_NOT_DONE: usize = bit(1);
 const EFUSE_RAM_BASE: usize = EFUSE_BASE + 0x40;
 const EFUSE_SECURE_FLAG: usize = EFUSE_RAM_BASE;
 
-pub struct Efuse;
-impl Driver for Efuse {
-    unsafe fn init() {
+pub struct Efuse {
+    pub secure: bool,
+    pub dram_size: DramSize,
+}
+
+impl StatelessDriver for Efuse {
+    unsafe fn init() -> Self {
         unsafe {
             while readl(EFUSE_CONTROL) & FLAG_BUSY == 1 {}
             writel(EFUSE_CONTROL, 1);
             while readl(EFUSE_STATUS) & FLAG_SETUP_NOT_DONE == 0 {}
         }
+
+        let secure = (unsafe { readl(EFUSE_SECURE_FLAG) } & 0xff) != 0;
+
+        let dram_size = match unsafe { readl(EFUSE_SECURE_FLAG) } >> 8 {
+            WINBOND_256M | WINBOND_256M_2 | UNILC_256M | UNILC_256M_2 | AP_MEMORY_256M
+            | AP_MEMORY_256M_2 => DramSize::Dram32M,
+
+            UNILC_512M | AP_MEMORY_512M | ESMT_512M | UNILC_512M_2 | UNILC_512M_3
+            | AP_MEMORY_512M_2 | ESMT_512M_2 => DramSize::Dram64M,
+
+            NYC_2G | NYC_2G_2 | NYC_2G_3 | NYC_2G_4 => DramSize::Dram256M,
+
+            NYB_4G | NYB_4G_2 => DramSize::Dram512M,
+
+            _ => DramSize::Dram128M,
+        };
+
+        Self { secure, dram_size }
     }
 }
 
@@ -43,26 +65,3 @@ const NYC_2G_4: usize = 0xF86317;
 
 const NYB_4G: usize = 0xF86313;
 const NYB_4G_2: usize = 0xF86315;
-
-impl Efuse {
-    pub unsafe fn dram_size() -> DramSize {
-        match unsafe { readl(EFUSE_SECURE_FLAG) } >> 8 {
-            WINBOND_256M | WINBOND_256M_2 | UNILC_256M | UNILC_256M_2 | AP_MEMORY_256M
-            | AP_MEMORY_256M_2 => DramSize::Dram32M,
-
-            UNILC_512M | AP_MEMORY_512M | ESMT_512M | UNILC_512M_2 | UNILC_512M_3
-            | AP_MEMORY_512M_2 | ESMT_512M_2 => DramSize::Dram64M,
-
-            NYC_2G | NYC_2G_2 | NYC_2G_3 | NYC_2G_4 => DramSize::Dram256M,
-
-            NYB_4G | NYB_4G_2 => DramSize::Dram512M,
-
-            _ => DramSize::Dram128M,
-        }
-    }
-
-    #[inline(always)]
-    pub unsafe fn is_fused() -> bool {
-        (unsafe { readl(EFUSE_SECURE_FLAG) } & 0xff) != 0
-    }
-}

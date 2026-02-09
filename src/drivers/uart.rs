@@ -1,6 +1,6 @@
 use ufmt::uWrite;
 
-use crate::drivers::{Driver, bit, readl, writel};
+use crate::drivers::{StatelessDriver, bit, readl, writel};
 
 const UART_CLOCK: usize = 26000000;
 const UART_BAUD: usize = 115200;
@@ -27,6 +27,7 @@ const FLAG_TX_8BITS: usize = 3 << 5;
 const FLAG_BUSY: usize = bit(8);
 
 pub struct Serial;
+
 impl Serial {
     fn raw_putc(c: u8) {
         unsafe {
@@ -70,8 +71,8 @@ impl uWrite for Serial {
     }
 }
 
-impl Driver for Serial {
-    unsafe fn init() {
+impl StatelessDriver for Serial {
+    unsafe fn init() -> Self {
         unsafe {
             while Self::busy() {}
 
@@ -92,6 +93,8 @@ impl Driver for Serial {
             writel(UART_IMSC, 0);
 
             writel(UART_CR, FLAG_ENABLE | FLAG_TX_ENABLE);
+
+            Self
         }
     }
 }

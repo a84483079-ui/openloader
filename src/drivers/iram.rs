@@ -1,4 +1,4 @@
-use crate::drivers::{Driver, readl, writel};
+use crate::drivers::{StatelessDriver, readl, writel};
 
 const IRAM1_BASE: usize = 0x102000;
 
@@ -7,8 +7,9 @@ const IRAM2_END: usize = 0x82003404;
 const IRAM2_SWITCH_ADDR: usize = 0x82002bc0;
 
 pub struct IRAM;
-impl Driver for IRAM {
-    unsafe fn init() {
+
+impl StatelessDriver for IRAM {
+    unsafe fn init() -> Self {
         unsafe {
             writel(IRAM1_BASE, 0);
 
@@ -17,6 +18,8 @@ impl Driver for IRAM {
                 writel(i, 0);
             }
             writel(IRAM2_SWITCH_ADDR, value);
+
+            Self
         }
     }
 }

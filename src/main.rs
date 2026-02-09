@@ -17,17 +17,23 @@ global_asm!(
     .global start
     .section .text.start
     start:
-        b main"
+        ldr r1, =0
+        ldr r1, [r1]
+        msr msp, r1
+        ldr r0, =main
+        bx r0"
 );
 
 mod drivers;
 use drivers::uart::Serial;
 
-use crate::drivers::Driver;
 use crate::drivers::clk::pll::PLL;
 use crate::drivers::clk::soc::SoCClocks;
+use crate::drivers::dram::Dram;
 use crate::drivers::efuse::Efuse;
 use crate::drivers::iram::IRAM;
+use crate::drivers::usb::UsbDriver;
+use crate::drivers::{Driver, StatelessDriver};
 
 unsafe fn early_init() {
     uwriteln!(&mut Serial, "Early init triggered");
@@ -51,20 +57,17 @@ unsafe fn init() {
     unsafe { IRAM::init() };
 
     uwriteln!(&mut Serial, "Efuse init");
-    unsafe { Efuse::init() };
+    let efuse = unsafe { Efuse::init() };
     uwriteln!(&mut Serial, "Efuse provided info:");
     uwriteln!(
         &mut Serial,
         "\tFused device: {}",
-        if unsafe { Efuse::is_fused() } {
-            "yes"
-        } else {
-            "no"
-        }
+        if efuse.secure { "yes" } else { "no" }
     );
-    uwriteln!(&mut Serial, "\tDRAM size: {}", unsafe {
-        Efuse::dram_size()
-    });
+    uwriteln!(&mut Serial, "\tDRAM size: {}", efuse.dram_size);
+
+    uwriteln!(&mut Serial, "DRAM init");
+    unsafe { Dram::new(efuse.dram_size).init() };
 
     uwriteln!(&mut Serial, "Init finished");
 }
@@ -78,6 +81,10 @@ pub unsafe extern "C" fn main() -> ! {
         init();
     }
 
-    uwriteln!(&mut Serial, "All done, spinning forever");
-    loop {}
+    uwriteln!(&mut Serial, "Starting USB bootloader protocol");
+
+    unsafe {
+        UsbDriver::init();
+        UsbDriver::receive_and_boot();
+    }
 }

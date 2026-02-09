@@ -1,5 +1,5 @@
 use crate::drivers::{
-    Driver,
+    StatelessDriver,
     clk::{Gate, Mux, gate, mux, parents, pll::TOPCRM_BASE},
     writel,
 };
@@ -7,15 +7,16 @@ use crate::drivers::{
 const TOPCRM_M0_SEL: usize = TOPCRM_BASE + 0x038;
 const TOPCRM_HS_CLK: usize = TOPCRM_BASE + 0x03c;
 
-const MATRIX_BASE: usize = 0x1306000;
+pub const MATRIX_BASE: usize = 0x1306000;
 const MATRIX_AXI_SEL: usize = MATRIX_BASE;
 const MATRIX_PS_SEL: usize = MATRIX_BASE + 0x20;
 const MATRIX_PHY_SEL: usize = MATRIX_BASE + 0x30;
 const MATRIX_AP_SEL: usize = MATRIX_BASE + 0x40;
 
 pub struct SoCClocks;
-impl Driver for SoCClocks {
-    unsafe fn init() {
+
+impl StatelessDriver for SoCClocks {
+    unsafe fn init() -> Self {
         unsafe {
             M0Mux::set_parent(M0Parents::Clk26m);
             M0Gate::ungate();
@@ -28,6 +29,8 @@ impl Driver for SoCClocks {
             writel(MATRIX_PS_SEL, 1);
             writel(MATRIX_PHY_SEL, 1);
             writel(MATRIX_AP_SEL, 1);
+
+            Self
         }
     }
 }

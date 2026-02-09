@@ -1,11 +1,20 @@
 pub mod clk;
+pub(super) mod delay;
 pub mod dram;
+pub(super) mod dram_control;
+pub(super) mod dram_phy;
 pub mod efuse;
 pub mod iram;
 pub mod uart;
+pub mod usb;
+pub mod zte_protocol;
+
+pub trait StatelessDriver {
+    unsafe fn init() -> Self;
+}
 
 pub trait Driver {
-    unsafe fn init();
+    unsafe fn init(&self);
 }
 
 pub(super) unsafe fn readl_raw<T>(reg: *const T) -> T {
@@ -31,3 +40,14 @@ pub(super) const fn bit(n: usize) -> usize {
 pub(super) const fn genmask(h: usize, l: usize) -> usize {
     (!0 << l) & (!0 >> (32 - 1 - h))
 }
+
+macro_rules! shift {
+    ($name:ident, $shift:expr) => {
+        #[allow(non_snake_case)]
+        const fn $name(value: usize) -> usize {
+            value << $shift
+        }
+    };
+}
+
+pub(super) use shift;

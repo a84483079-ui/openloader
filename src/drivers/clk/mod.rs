@@ -1,5 +1,6 @@
 use crate::drivers::{bit, genmask, readl, writel};
 
+pub mod dram;
 pub mod pll;
 pub mod soc;
 
