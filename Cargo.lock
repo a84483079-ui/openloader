@@ -58,6 +58,7 @@ dependencies = [
  "derive-ctor",
  "derive_more",
  "simpleport",
+ "thiserror",
  "ufmt",
 ]
 
@@ -96,11 +97,8 @@ checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
 name = "simpleport"
-version = "0.1.0"
-source = "git+https://github.com/rva3/simpleport#f2d22b07518cca70e022790290640b40ad40b297"
-dependencies = [
- "thiserror",
-]
+version = "0.2.0"
+source = "git+https://github.com/rva3/simpleport#9fc0c6b08597484ba1388f20498b1d8e95ac9227"
 
 [[package]]
 name = "syn"

@@ -25,6 +25,7 @@ global_asm!(
 );
 
 mod drivers;
+mod err;
 use drivers::uart::Serial;
 
 use crate::drivers::clk::pll::PLL;
@@ -81,7 +82,9 @@ unsafe fn late_init() {
         usb.init();
 
         let mut protocol = ZteProtocol::new(usb);
-        protocol.dispatch();
+        if let Err(e) = protocol.dispatch() {
+            uwriteln!(&mut Serial, "Error on running protocol: {}", e);
+        }
     }
 
     uwriteln!(&mut Serial, "Late init finished");

@@ -2,7 +2,10 @@ use core::slice;
 use derive_ctor::ctor;
 use ufmt::uwriteln;
 
-use crate::drivers::{uart::Serial, usb::Usb, writel};
+use crate::{
+    drivers::{uart::Serial, usb::Usb, writel},
+    err::Error,
+};
 use simpleport::{SimpleRead, SimpleWrite};
 
 const SYNC_FLAG: u8 = 0x5a;
@@ -24,7 +27,7 @@ pub struct ZteProtocol {
 }
 
 impl ZteProtocol {
-    pub unsafe fn dispatch(&mut self) -> Result<(), simpleport::err::Error> {
+    pub unsafe fn dispatch(&mut self) -> Result<(), Error> {
         loop {
             let cmd = self.usb.read_u8()?;
 

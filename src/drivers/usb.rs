@@ -3,6 +3,7 @@ use ufmt::uwriteln;
 
 use crate::drivers::uart::Serial;
 use crate::drivers::{DriverMut, bit, readl, shift, writel};
+use crate::err::USBError;
 
 const TYPE_BULK: usize = 2;
 
@@ -201,7 +202,7 @@ impl Usb {
         }
     }
 
-    unsafe fn write_u8(&mut self, b: u8) {
+    unsafe fn write_u8(&mut self, b: u8) -> Result<(), USBError> {
         unsafe {
             writel(USB_DIEPTSIZ1, SHIFT_PKTCNT(1) | SHIFT_XFER_COUNT(1));
 
@@ -219,13 +220,12 @@ impl Usb {
                 let intr = readl(USB_DIEPINT1);
                 if (intr & FLAG_XFERCOMPL) != 0 {
                     writel(USB_DIEPINT1, 1);
-                    break;
+                    break Ok(());
                 }
 
                 timeout -= 1;
                 if timeout == 0 {
-                    uwriteln!(&mut Serial, "USB: Transmit timeout");
-                    break;
+                    break Err(USBError::Timeout);
                 }
             }
         }
@@ -233,7 +233,9 @@ impl Usb {
 }
 
 impl SimpleRead for Usb {
-    fn read(&mut self, buf: &mut [u8]) -> simpleport::Result<()> {
+    type Error = USBError;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
         for i in 0..buf.len() {
             buf[i] = unsafe { self.read_u8() };
         }
@@ -243,9 +245,11 @@ impl SimpleRead for Usb {
 }
 
 impl SimpleWrite for Usb {
-    fn write(&mut self, buf: &[u8]) -> simpleport::Result<()> {
+    type Error = USBError;
+
+    fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
         for b in buf {
-            unsafe { self.write_u8(*b) };
+            unsafe { self.write_u8(*b)? };
         }
 
         Ok(())
