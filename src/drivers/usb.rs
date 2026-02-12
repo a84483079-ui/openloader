@@ -1,52 +1,71 @@
 use simpleport::{SimpleRead, SimpleWrite};
 use ufmt::uwriteln;
 
+use crate::drivers::DriverMut;
+use crate::drivers::regs::register;
 use crate::drivers::uart::Serial;
-use crate::drivers::{DriverMut, bit, readl, shift, writel};
 use crate::err::USBError;
 
 const TYPE_BULK: usize = 2;
 
 const USB_BASE: usize = 0x01500000;
 
-const USB_GAHBCFG: usize = USB_BASE + 0x008;
-const FLAG_NPTXFEMPLVL: usize = bit(5);
+register!(gahbcfg, USB_BASE + 0x008, [
+    bit: NPTXFEMPLVL, offset: 5, width: 1;
+]);
 
-const USB_GUSBCFG: usize = USB_BASE + 0x00c;
-const USB_GINTSTS: usize = USB_BASE + 0x014;
-const FLAG_RXFLVL: usize = bit(4);
-const FLAG_OEPINT: usize = bit(19);
+register!(gintsts, USB_BASE + 0x014, [
+    bit: RXFLVL, offset: 4;
+    bit: OEPINT, offset: 19;
+]);
 
-const USB_GRXSTSP: usize = USB_BASE + 0x020;
-const USB_DCTL: usize = USB_BASE + 0x804;
-const FLAG_SOFT_RESET1: usize = bit(8);
-const FLAG_SOFT_RESET2: usize = bit(10);
+register!(grxstsp, USB_BASE + 0x020);
 
-const USB_DSTS: usize = USB_BASE + 0x808;
-const USB_DTXFSIZ1: usize = USB_BASE + 0x104;
+register!(dctl, USB_BASE + 0x804, [
+    bit: SOFT_RESET1, offset: 8;
+    bit: SOFT_RESET2, offset: 10;
+]);
 
-const USB_DIEPCTL1: usize = USB_BASE + 0x920;
-shift!(SHIFT_TXFNUM, 22);
+register!(dsts, USB_BASE + 0x808);
 
-const USB_DIEPINT1: usize = USB_BASE + 0x928;
-const USB_DIEPTSIZ1: usize = USB_BASE + 0x930;
-shift!(SHIFT_XFER_COUNT, 0);
+register!(doepctl1, USB_BASE + 0xb20, [
+    field: MPS, offset: 0, width: 11;
+    bit: USB_ACTIVE_EP, offset: 15;
+    field: EP_TYPE, offset: 18, width: 2;
+    bit: CNAK, offset: 26;
+    bit: EPENA, offset: 31;
+]);
 
-const USB_DOEPCTL1: usize = USB_BASE + 0xb20;
-const FLAG_USB_ACTIVE_EP: usize = bit(15);
-shift!(SHIFT_EP_TYPE, 18);
-const FLAG_CNAK: usize = bit(26);
-const FLAG_EPENA: usize = bit(31);
+register!(diepint1, USB_BASE + 0x928, [
+    bit: XFERCOMPL, offset: 0;
+]);
 
-const USB_DOEPINT1: usize = USB_BASE + 0xb28;
-const FLAG_XFERCOMPL: usize = bit(0);
-const FLAG_SETUP_COMPLETED: usize = bit(3);
+register!(dieptsiz1, USB_BASE + 0x930, [
+    field: XFERSIZE, offset: 0, width: 7;
+    field: PKTCNT, offset: 19, width: 2;
+]);
 
-const USB_DOEPTSIZ1: usize = USB_BASE + 0xb30;
-shift!(SHIFT_PKTCNT, 19);
+register!(diepctl1, USB_BASE + 0x920, [
+    field: MPS, offset: 0, width: 11;
+    bit: USB_ACTIVE_EP, offset: 15;
+    field: EP_TYPE, offset: 18, width: 2;
+    field: TXFNUM, offset: 22, width: 4;
+    bit: CNAK, offset: 26;
+    bit: EPENA, offset: 31;
+]);
 
-const USB_RX_FIFO: usize = USB_BASE + 0x1000;
-const USB_TX_FIFO: usize = USB_BASE + 0x2000;
+register!(doepint1, USB_BASE + 0xb28, [
+    bit: XFERCOMPL, offset: 0;
+    bit: SETUP_COMPLETED, offset: 3;
+]);
+
+register!(doeptsiz1, USB_BASE + 0xb30, [
+    field: SPEED, offset: 0, width: 2;
+    bit: PKTCNT, offset: 19;
+]);
+
+register!(rx_fifo, USB_BASE + 0x1000);
+register!(tx_fifo, USB_BASE + 0x2000);
 
 pub struct Usb {
     rx_buf: [u8; 512],
@@ -58,31 +77,19 @@ pub struct Usb {
 impl DriverMut for Usb {
     unsafe fn init(&mut self) {
         unsafe {
-            let mut gahbcfg = readl(USB_GAHBCFG);
-            let gusbcfg = readl(USB_GUSBCFG);
-            let dtxfsiz1 = readl(USB_DTXFSIZ1);
+            gahbcfg::read_modify_write(|r| {
+                use gahbcfg::*;
 
-            uwriteln!(
-                &mut Serial,
-                "USB: Config - GAHBCFG=0x{:x} GUSBCFG=0x{:x} DTXFSIZ1=0x{:x}",
-                gahbcfg,
-                gusbcfg,
-                dtxfsiz1
-            );
+                if r.is_set_bit(NPTXFEMPLVL) {
+                    r.clear_bit(NPTXFEMPLVL);
+                }
+            });
 
-            if (gahbcfg & FLAG_NPTXFEMPLVL) != 0 {
-                gahbcfg &= !FLAG_NPTXFEMPLVL;
-                writel(USB_GAHBCFG, gahbcfg);
-            }
+            dctl::read_modify_write(|r| {
+                r.set_bit(dctl::SOFT_RESET1).set_bit(dctl::SOFT_RESET2);
+            });
 
-            let mut dctl = readl(USB_DCTL);
-            if (dctl & FLAG_SOFT_RESET1) != 0 || (dctl & FLAG_SOFT_RESET2) != 0 {
-                dctl |= FLAG_SOFT_RESET1 | FLAG_SOFT_RESET2;
-                writel(USB_DCTL, dctl);
-            }
-
-            let dsts = readl(USB_DSTS);
-            let speed = (dsts >> 1) & 0x3;
+            let speed = (dsts::read() >> 1) & 0x3;
 
             self.ep_mps = if speed == 0 {
                 uwriteln!(
@@ -95,24 +102,31 @@ impl DriverMut for Usb {
                 64
             };
 
-            writel(USB_DOEPTSIZ1, SHIFT_PKTCNT(1) | self.ep_mps);
-            writel(
-                USB_DOEPCTL1,
-                FLAG_EPENA
-                    | FLAG_CNAK
-                    | SHIFT_EP_TYPE(TYPE_BULK)
-                    | FLAG_USB_ACTIVE_EP
-                    | self.ep_mps,
-            );
+            doeptsiz1::read_modify_write(|r| {
+                use doeptsiz1::*;
 
-            writel(
-                USB_DIEPCTL1,
-                FLAG_CNAK
-                    | SHIFT_TXFNUM(1)
-                    | SHIFT_EP_TYPE(TYPE_BULK)
-                    | FLAG_USB_ACTIVE_EP
-                    | self.ep_mps,
-            );
+                r.set_bit(PKTCNT).set_field(SPEED, speed);
+            });
+
+            doepctl1::new_scope(|r| {
+                use doepctl1::*;
+
+                r.set_bit(EPENA)
+                    .set_bit(CNAK)
+                    .set_field(EP_TYPE, 2)
+                    .set_bit(USB_ACTIVE_EP)
+                    .set_field(MPS, self.ep_mps);
+            });
+
+            diepctl1::new_scope(|r| {
+                use diepctl1::*;
+
+                r.set_bit(CNAK)
+                    .set_field(TXFNUM, 1)
+                    .set_field(EP_TYPE, 2)
+                    .set_bit(USB_ACTIVE_EP)
+                    .set_field(MPS, self.ep_mps);
+            });
         }
     }
 }
@@ -127,19 +141,19 @@ impl Usb {
         }
     }
 
-    unsafe fn read_u8(&mut self) -> u8 {
+    unsafe fn read_u8(&mut self) -> Result<u8, USBError> {
         let mut hang_ctr = 0;
         loop {
             if self.rx_ptr < self.rx_cnt {
                 let b = self.rx_buf[self.rx_ptr];
                 self.rx_ptr += 1;
-                return b;
+                break Ok(b);
             }
 
-            let status = unsafe { readl(USB_GINTSTS) };
+            let status = unsafe { gintsts::read() };
 
-            if (status & FLAG_RXFLVL) != 0 {
-                let rx_status = unsafe { readl(USB_GRXSTSP) };
+            if status.is_set_bit(gintsts::RXFLVL) {
+                let rx_status = unsafe { grxstsp::read() };
                 let packet_status = (rx_status >> 17) & 0xf;
                 let byte_count = ((rx_status >> 4) & 0x7ff) as usize;
 
@@ -150,7 +164,7 @@ impl Usb {
 
                     let words = (byte_count + 3) / 4;
                     for _ in 0..words {
-                        let val = unsafe { readl(USB_RX_FIFO) };
+                        let val = unsafe { rx_fifo::read() };
                         let bytes = val.to_le_bytes();
                         for k in 0..4 {
                             if self.rx_cnt < 512 && self.rx_cnt < byte_count {
@@ -162,64 +176,65 @@ impl Usb {
                 }
             }
 
-            if (status & FLAG_OEPINT) != 0 {
-                let doepint = unsafe { readl(USB_DOEPINT1) };
-                unsafe { writel(USB_DOEPINT1, doepint) };
+            if status.is_set_bit(gintsts::OEPINT) {
+                unsafe {
+                    doepint1::read_modify_write(|r| {
+                        use doepint1::*;
 
-                if (doepint & FLAG_XFERCOMPL) != 0 || (doepint & FLAG_SETUP_COMPLETED) != 0 {
-                    unsafe {
-                        writel(USB_DOEPTSIZ1, FLAG_OEPINT | (self.ep_mps << 0));
-                        writel(
-                            USB_DOEPCTL1,
-                            FLAG_EPENA
-                                | FLAG_CNAK
-                                | SHIFT_EP_TYPE(TYPE_BULK)
-                                | FLAG_USB_ACTIVE_EP
-                                | self.ep_mps,
-                        );
-                    }
+                        doepint1::write_raw(r.raw());
+
+                        if r.is_set_bit(XFERCOMPL) || r.is_set_bit(SETUP_COMPLETED) {
+                            doeptsiz1::read_modify_write(|r| {
+                                r.set_bit(doeptsiz1::PKTCNT)
+                                    .set_field(doeptsiz1::SPEED, self.ep_mps);
+                            });
+
+                            doepctl1::new_scope(|r| {
+                                use doepctl1::*;
+
+                                r.set_bit(EPENA)
+                                    .set_bit(CNAK)
+                                    .set_field(EP_TYPE, TYPE_BULK)
+                                    .set_bit(USB_ACTIVE_EP)
+                                    .set_field(MPS, self.ep_mps);
+                            });
+                        }
+                    });
                 }
             }
 
             hang_ctr += 1;
             if hang_ctr > 1_000_000 {
-                let doepctl = unsafe { readl(USB_DOEPCTL1) };
-                if (doepctl & FLAG_EPENA) == 0 {
-                    unsafe {
-                        writel(USB_DOEPTSIZ1, FLAG_OEPINT | (self.ep_mps << 0));
-                        writel(
-                            USB_DOEPCTL1,
-                            FLAG_EPENA
-                                | FLAG_CNAK
-                                | SHIFT_EP_TYPE(TYPE_BULK)
-                                | FLAG_USB_ACTIVE_EP
-                                | self.ep_mps,
-                        );
-                    }
-                }
-                hang_ctr = 0;
+                break Err(USBError::Timeout);
             }
         }
     }
 
     unsafe fn write_u8(&mut self, b: u8) -> Result<(), USBError> {
         unsafe {
-            writel(USB_DIEPTSIZ1, SHIFT_PKTCNT(1) | SHIFT_XFER_COUNT(1));
+            dieptsiz1::new_scope(|r| {
+                use dieptsiz1::*;
 
-            let val = FLAG_EPENA
-                | FLAG_CNAK
-                | SHIFT_EP_TYPE(TYPE_BULK)
-                | FLAG_USB_ACTIVE_EP
-                | self.ep_mps;
-            writel(USB_DIEPCTL1, val);
+                r.set_field(PKTCNT, 1).set_field(XFERSIZE, 1);
+            });
 
-            writel(USB_TX_FIFO, b as usize);
+            diepctl1::new_scope(|r| {
+                use diepctl1::*;
+
+                r.set_bit(EPENA)
+                    .set_bit(CNAK)
+                    .set_field(EP_TYPE, TYPE_BULK)
+                    .set_bit(USB_ACTIVE_EP)
+                    .set_field(MPS, self.ep_mps);
+            });
+
+            tx_fifo::write(b as usize);
 
             let mut timeout = 10_000_000;
             loop {
-                let intr = readl(USB_DIEPINT1);
-                if (intr & FLAG_XFERCOMPL) != 0 {
-                    writel(USB_DIEPINT1, 1);
+                let intr = diepint1::read();
+                if intr.is_set_bit(diepint1::XFERCOMPL) {
+                    diepint1::write_raw(1);
                     break Ok(());
                 }
 
@@ -237,7 +252,7 @@ impl SimpleRead for Usb {
 
     fn read(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
         for i in 0..buf.len() {
-            buf[i] = unsafe { self.read_u8() };
+            buf[i] = unsafe { self.read_u8()? };
         }
 
         Ok(())

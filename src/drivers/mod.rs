@@ -5,6 +5,7 @@ pub(super) mod dram_control;
 pub(super) mod dram_phy;
 pub mod efuse;
 pub mod iram;
+pub(super) mod regs;
 pub mod uart;
 pub mod usb;
 pub mod zte_protocol;
