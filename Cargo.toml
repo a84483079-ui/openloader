@@ -8,3 +8,8 @@ derive-ctor = "1.0.6"
 derive_more = { version = "2.1.1", features = ["is_variant"], default-features = false }
 simpleport = { git = "https://github.com/rva3/simpleport", version = "0.2.0" }
 ufmt = "0.2.0"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
